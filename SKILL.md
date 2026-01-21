@@ -34,6 +34,9 @@ Optional output modes (default is `files`):
 - `--output-mode files` writes the request class and updates `HostPath.swift`, but skips `project.pbxproj` (you add the file to Xcode manually).
 - `--output-mode full` writes request class + updates `HostPath.swift` + updates `project.pbxproj`.
 
+**Operational rule (must follow):**
+- If the user selects `print`, you MUST run `swift_api_requester.py --output-mode print` (do not manually paste output). This guarantees `HostPath.swift` is updated in print mode.
+
 Where these placeholders are taken from the interface definition:
 - `<METHOD>`: HTTP method (GET/POST/PUT/etc.)
 - `<PATH>`: request path (e.g., `/equipment/equipment/wear`)
@@ -68,6 +71,7 @@ OpenAPI extraction mapping:
 4) Read `living/Classes/Swift/Networking/HostPath.swift`:
    - In `extension Host`, use an existing Host if it matches the normalized domain.
    - If missing, add a new Host entry for the normalized domain.
+   - If the generated Host name collides with an existing Host for a different domain, auto-append a suffix (e.g., `_yuanqi`), and if still colliding append an incrementing suffix (`_2`, `_3`, ...).
      - Example: domain passport.huajiao.com -> `static let passport = Host(rawValue: "passport.huajiao.com")`
      - The request class must use `Host.passport.rawValue`.
    - In `extension Path`, use an existing Path for the request path.

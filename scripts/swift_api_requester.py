@@ -55,12 +55,41 @@ def to_lower_camel(value: str) -> str:
     return value[:1].lower() + value[1:]
 
 
+def parse_host_entries(content: str) -> dict[str, str]:
+    entries: dict[str, str] = {}
+    for match in re.finditer(r"static let (\w+) = Host\(rawValue: \"([^\"]+)\"\)", content):
+        entries[match.group(1)] = match.group(2)
+    return entries
+
+
+def build_unique_host_name(domain: str, existing: dict[str, str]) -> str:
+    parts = domain.split(".")
+    base_name = sanitize_identifier(parts[0]) if parts else "host"
+    if base_name not in existing:
+        return base_name
+    if existing.get(base_name) == domain:
+        return base_name
+
+    suffix_base = sanitize_identifier(parts[1]) if len(parts) > 1 else "host"
+    candidate = f"{base_name}_{suffix_base}" if suffix_base else base_name
+    if candidate not in existing or existing.get(candidate) == domain:
+        return candidate
+
+    idx = 2
+    while True:
+        candidate_i = f"{candidate}_{idx}"
+        if candidate_i not in existing or existing.get(candidate_i) == domain:
+            return candidate_i
+        idx += 1
+
+
 def ensure_host_entry(content: str, domain: str) -> tuple[str, str, bool]:
     match = re.search(rf"static let (\w+) = Host\(rawValue: \"{re.escape(domain)}\"\)", content)
     if match:
         return content, match.group(1), False
 
-    host_name = sanitize_identifier(domain.split(".")[0])
+    existing = parse_host_entries(content)
+    host_name = build_unique_host_name(domain, existing)
     block_match = re.search(r"extension Host \{([\s\S]*?)\n\}\n\nextension Path \{", content)
     if not block_match:
         die("failed to locate Host extension in HostPath.swift")
