@@ -21,12 +21,18 @@ python3  ~/.codex/skills/swift-api-requester/scripts/swift_api_requester.py \\
   --path <PATH> \\
   --summary <SUMMARY> \\
   --server <SERVER_DOMAIN> \\
-  --params \"<param1>:<type1>,<param2>:<type2>\"
+  --params \"<param1>:<type1>,<param2>:<type2>\" \\
+  --output-mode full
 ```
 
 If you are not already in the project root, `cd` into it first. The parent folder name must be `huajiao_ios` to ensure correct path resolution for project files.
 
 Note: the script lives in the skill directory, not the project `scripts/` folder. Use the absolute path (or `$CODEX_HOME`) while running it from the project root.
+
+Optional output modes (default is `files`):
+- `--output-mode print` prints the generated Swift code to stdout, also writes any Host/Path changes to `HostPath.swift`.
+- `--output-mode files` writes the request class and updates `HostPath.swift`, but skips `project.pbxproj` (you add the file to Xcode manually).
+- `--output-mode full` writes request class + updates `HostPath.swift` + updates `project.pbxproj`.
 
 Where these placeholders are taken from the interface definition:
 - `<METHOD>`: HTTP method (GET/POST/PUT/etc.)
@@ -74,9 +80,9 @@ OpenAPI extraction mapping:
 7) Output destination:
    - Always write the generated Swift class file to `huajiao_ios/living/Classes/Swift/Networking/Request` (assume it already exists).
    - If the user provides an explicit output path or filename, use it and override the default.
-8) Xcode project integration (always):
+8) Xcode project integration (when `--output-mode full`):
    - Prefer running `$CODEX_HOME/skills/swift-api-requester/scripts/swift_api_requester.py` to update `HostPath.swift` and `living.xcodeproj/project.pbxproj` in one pass.
-   - Always add the generated folder and file(s) to `living.xcodeproj/project.pbxproj` under the `living` target.
+   - Add the generated folder and file(s) to `living.xcodeproj/project.pbxproj` under the `living` target.
    - If the `Request` folder already exists in the project, only add the newly generated class file.
    - Even when the project is opened via `living.xcworkspace` (CocoaPods), changes to `living.xcodeproj` will appear in the workspace because the workspace references that project.
 
@@ -179,6 +185,11 @@ If anything is missing or ambiguous in the API doc, ask the user before generati
 
 If writing a file:
 - Use `<ClassName>.swift` as the filename unless the user specifies otherwise.
+
+## Mode Selection
+
+Before outputting anything, ask the user to choose one of the three output modes.
+- Default selection is `files` (user can press Enter to accept).
 
 ## references/
 

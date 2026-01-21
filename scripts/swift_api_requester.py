@@ -55,10 +55,10 @@ def to_lower_camel(value: str) -> str:
     return value[:1].lower() + value[1:]
 
 
-def ensure_host_entry(content: str, domain: str) -> tuple[str, str]:
+def ensure_host_entry(content: str, domain: str) -> tuple[str, str, bool]:
     match = re.search(rf"static let (\w+) = Host\(rawValue: \"{re.escape(domain)}\"\)", content)
     if match:
-        return content, match.group(1)
+        return content, match.group(1), False
 
     host_name = sanitize_identifier(domain.split(".")[0])
     block_match = re.search(r"extension Host \{([\s\S]*?)\n\}\n\nextension Path \{", content)
@@ -68,13 +68,13 @@ def ensure_host_entry(content: str, domain: str) -> tuple[str, str]:
     insert_at = block_match.end(1)
     insertion = f"\n    static let {host_name} = Host(rawValue: \"{domain}\")\n"
     new_content = content[:insert_at] + insertion + content[insert_at:]
-    return new_content, host_name
+    return new_content, host_name, True
 
 
-def ensure_path_entry(content: str, path_value: str, summary: str, default_name: str) -> tuple[str, str]:
+def ensure_path_entry(content: str, path_value: str, summary: str, default_name: str) -> tuple[str, str, bool]:
     match = re.search(rf"static let (\w+) = Path\(rawValue: \"{re.escape(path_value)}\"\)", content)
     if match:
-        return content, match.group(1)
+        return content, match.group(1), False
 
     block_match = re.search(r"extension Path \{([\s\S]*?)\n\}\n\nstruct HostPath", content)
     if not block_match:
@@ -83,21 +83,25 @@ def ensure_path_entry(content: str, path_value: str, summary: str, default_name:
     insert_at = block_match.end(1)
     insertion = f"\n    /// {summary}\n    static let {default_name} = Path(rawValue: \"{path_value}\")\n"
     new_content = content[:insert_at] + insertion + content[insert_at:]
-    return new_content, default_name
+    return new_content, default_name, True
 
 
-def update_host_path(host_path_file: Path, path_value: str, summary: str, domain: str) -> tuple[str, str]:
+def update_host_path(
+    host_path_file: Path, path_value: str, summary: str, domain: str, write_changes: bool = True
+) -> tuple[str, str, bool]:
     content = host_path_file.read_text(encoding="utf-8")
 
     normalized = normalize_domain(domain)
-    content, host_name = ensure_host_entry(content, normalized)
+    content, host_name, host_changed = ensure_host_entry(content, normalized)
 
     base_name = to_pascal(path_value)
     path_name_default = to_lower_camel(base_name)
-    content, path_name = ensure_path_entry(content, path_value, summary, path_name_default)
+    content, path_name, path_changed = ensure_path_entry(content, path_value, summary, path_name_default)
 
-    host_path_file.write_text(content, encoding="utf-8")
-    return host_name, path_name
+    changed = host_changed or path_changed
+    if write_changes and changed:
+        host_path_file.write_text(content, encoding="utf-8")
+    return host_name, path_name, changed
 
 
 def map_param_type(raw_type: str) -> str:
@@ -254,6 +258,12 @@ def main() -> None:
     parser.add_argument("--server", required=True)
     parser.add_argument("--params", default="")
     parser.add_argument("--project-root", default=".", help="Project root path containing living/ and living.xcodeproj")
+    parser.add_argument(
+        "--output-mode",
+        choices=["print", "files", "full"],
+        default="files",
+        help="print: stdout + update HostPath; files: write request + HostPath; full: request + HostPath + pbxproj",
+    )
 
     args = parser.parse_args()
 
@@ -264,20 +274,29 @@ def main() -> None:
 
     if not host_path_file.exists():
         die(f"HostPath.swift not found at {host_path_file}")
-    if not pbxproj_file.exists():
+    if args.output_mode == "full" and not pbxproj_file.exists():
         die(f"project.pbxproj not found at {pbxproj_file}")
 
-    host_name, path_name = update_host_path(host_path_file, args.path, args.summary, args.server)
+    write_hostpath = args.output_mode in ("print", "files", "full")
+    host_name, path_name, _ = update_host_path(
+        host_path_file, args.path, args.summary, args.server, write_changes=write_hostpath
+    )
     base_class = to_pascal(args.path)
     class_name = f"{base_class}Request"
 
     params = parse_params(args.params)
     swift_source = build_request_class(class_name, host_name, path_name, params, args.method)
 
+    if args.output_mode == "print":
+        print(swift_source)
+        return
+
+    request_dir.mkdir(parents=True, exist_ok=True)
     out_file = request_dir / f"{class_name}.swift"
     out_file.write_text(swift_source, encoding="utf-8")
 
-    update_pbxproj(pbxproj_file, out_file.name)
+    if args.output_mode == "full":
+        update_pbxproj(pbxproj_file, out_file.name)
 
 
 if __name__ == "__main__":
