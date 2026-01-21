@@ -9,11 +9,45 @@ description: Generate Swift API request classes and a companion commented-out re
 
 Generate a Swift request class and a commented-out request method from an interface definition (OpenAPI/JSON/YAML snippet or a structured summary). The definition is parsed for request method, path, parameters (names + types), server domain, and response notes.
 
+## Quick Start (Fast Path)
+
+Prefer using `$CODEX_HOME/skills/swift-api-requester/scripts/swift_api_requester.py` to update `HostPath.swift`, generate the request class, and update `project.pbxproj` in a single pass.
+
+Example (run from project root; the parent folder name must be `huajiao_ios`):
+
+```bash
+python3  ~/.codex/skills/swift-api-requester/scripts/swift_api_requester.py \\
+  --method <METHOD> \\
+  --path <PATH> \\
+  --summary <SUMMARY> \\
+  --server <SERVER_DOMAIN> \\
+  --params \"<param1>:<type1>,<param2>:<type2>\"
+```
+
+If you are not already in the project root, `cd` into it first. The parent folder name must be `huajiao_ios` to ensure correct path resolution for project files.
+
+Note: the script lives in the skill directory, not the project `scripts/` folder. Use the absolute path (or `$CODEX_HOME`) while running it from the project root.
+
+Where these placeholders are taken from the interface definition:
+- `<METHOD>`: HTTP method (GET/POST/PUT/etc.)
+- `<PATH>`: request path (e.g., `/equipment/equipment/wear`)
+- `<SUMMARY>`: interface summary/description
+- `<SERVER_DOMAIN>`: server domain from the doc (before normalization)
+- `--params`: request parameters as `name:type` pairs, comma-separated
+
+OpenAPI extraction mapping:
+- `<METHOD>`: `paths.<path>.<method>`
+- `<PATH>`: the `paths` key (e.g., `/equipment/equipment/wear`)
+- `<SUMMARY>`: `paths.<path>.<method>.summary` (fallback to `description` if missing)
+- `<SERVER_DOMAIN>`: `servers[0].url` host (strip scheme and path)
+- `--params`: requestBody schema properties + parameters list (use type mapping rules below)
+
 ## Workflow
 
 1) Always ask for the interface definition data at the start of every use of this skill.
    - Prefer OpenAPI/JSON/YAML snippets.
    - If the user only has a URL, ask them to paste the relevant sections instead.
+   - If the user already provided the interface definition in the same message, skip asking and proceed.
 2) Extract these fields from the provided data:
    - Request method (GET/POST/PUT/etc.)
    - Request path (e.g., /voice/guide/close_pop)
@@ -38,11 +72,10 @@ Generate a Swift request class and a commented-out request method from an interf
 5) Generate the Swift request class following the rules below.
 6) Generate the commented-out request method template following the rules below.
 7) Output destination:
-   - Default to writing the generated Swift class file to `huajiao_ios/living/Classes/Swift/Networking/Request`.
-   - If `huajiao_ios/living/Classes/Swift/Networking/Request` does not exist, create it.
-   - If a `Request` folder already exists under `huajiao_ios/living/Classes/Swift/Networking`, always write to that folder.
+   - Always write the generated Swift class file to `huajiao_ios/living/Classes/Swift/Networking/Request` (assume it already exists).
    - If the user provides an explicit output path or filename, use it and override the default.
 8) Xcode project integration (always):
+   - Prefer running `$CODEX_HOME/skills/swift-api-requester/scripts/swift_api_requester.py` to update `HostPath.swift` and `living.xcodeproj/project.pbxproj` in one pass.
    - Always add the generated folder and file(s) to `living.xcodeproj/project.pbxproj` under the `living` target.
    - If the `Request` folder already exists in the project, only add the newly generated class file.
    - Even when the project is opened via `living.xcworkspace` (CocoaPods), changes to `living.xcodeproj` will appear in the workspace because the workspace references that project.
@@ -146,7 +179,6 @@ If anything is missing or ambiguous in the API doc, ask the user before generati
 
 If writing a file:
 - Use `<ClassName>.swift` as the filename unless the user specifies otherwise.
-- If the user asks only for display and not for writing a file, output to the chat only.
 
 ## references/
 
