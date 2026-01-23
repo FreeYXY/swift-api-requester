@@ -1,13 +1,17 @@
 ---
 name: swift-api-requester
-description: Generate Swift API request classes and a companion commented-out request method based on a user-provided interface definition (OpenAPI/JSON/YAML summary). Use when the user asks for "api-req", wants a Swift request class built from API docs, or needs a request method template that matches HJServiceRequestInfoBase and FalconFoundation patterns.
+description: Generate Swift API request classes, response model structs (Codable), and a companion commented-out request method based on a user-provided interface definition (OpenAPI/JSON/YAML summary). Use when the user asks for "api-req", wants a Swift request class built from API docs, needs a response model from API docs, or needs a request method template that matches HJServiceRequestInfoBase and FalconFoundation patterns.
 ---
 
 # Swift API Requester
 
 ## Overview
 
-Generate a Swift request class and a commented-out request method from an interface definition (OpenAPI/JSON/YAML snippet or a structured summary). The definition is parsed for request method, path, parameters (names + types), server domain, and response notes.
+Generate a Swift request class, response model struct(s) conforming to Codable, and a commented-out request method from an interface definition (OpenAPI/JSON/YAML snippet or a structured summary). The definition is parsed for request method, path, parameters (names + types), server domain, and response fields/schema. Response model parsing starts from the `data` field in the response.
+
+## Note
+
+Handle the work as a seasoned professional iOS software development engineer
 
 ## Quick Start (Fast Path)
 
@@ -22,6 +26,9 @@ python3  ~/.codex/skills/swift-api-requester/scripts/swift_api_requester.py \\
   --summary <SUMMARY> \\
   --server <SERVER_DOMAIN> \\
   --params \"<param1>:<type1>,<param2>:<type2>\" \\
+  --response \"<field1>:<type1>,<field2>:<type2>\" \\
+  # or --response '{\"code\":0,\"data\":{\"id\":1}}' \\
+  # or --response-file /path/to/response.json \\
   --output-mode full
 ```
 
@@ -30,9 +37,9 @@ If you are not already in the project root, `cd` into it first. The parent folde
 Note: the script lives in the skill directory, not the project `scripts/` folder. Use the absolute path (or `$CODEX_HOME`) while running it from the project root.
 
 Optional output modes (default is `files`):
-- `--output-mode print` prints the generated Swift code to stdout, also writes any Host/Path changes to `HostPath.swift`.
-- `--output-mode files` writes the request class and updates `HostPath.swift`, but skips `project.pbxproj` (you add the file to Xcode manually).
-- `--output-mode full` writes request class + updates `HostPath.swift` + updates `project.pbxproj`.
+- `--output-mode print` prints the generated Swift request class, response model(s), and request method to stdout, also writes any Host/Path changes to `HostPath.swift`.
+- `--output-mode files` writes the request class and response model(s) to disk and updates `HostPath.swift`, but skips `project.pbxproj` (you add the files to Xcode manually).
+- `--output-mode full` writes request class + response model(s) + updates `HostPath.swift` + updates `project.pbxproj` (request + model are both added).
 
 **Operational rule (must follow):**
 - If the user selects `print`, you MUST run `swift_api_requester.py --output-mode print` (do not manually paste output). This guarantees `HostPath.swift` is updated in print mode.
@@ -43,6 +50,9 @@ Where these placeholders are taken from the interface definition:
 - `<SUMMARY>`: interface summary/description
 - `<SERVER_DOMAIN>`: server domain from the doc (before normalization)
 - `--params`: request parameters as `name:type` pairs, comma-separated
+- `--response`: response fields as `name:type` pairs (flat responses), or a JSON payload string (if schema/example conflict, use schema fields)
+- `--response-file`: path to a JSON response payload file (preferred for nested models)
+  - When using fields list, the fields should correspond to the JSON under `data`.
 
 OpenAPI extraction mapping:
 - `<METHOD>`: `paths.<path>.<method>`
@@ -50,6 +60,7 @@ OpenAPI extraction mapping:
 - `<SUMMARY>`: `paths.<path>.<method>.summary` (fallback to `description` if missing)
 - `<SERVER_DOMAIN>`: `servers[0].url` host (strip scheme and path)
 - `--params`: requestBody schema properties + parameters list (use type mapping rules below)
+- `--response`: `paths.<path>.<method>.responses.200.content.application/json.schema` (prefer schema; if schema/example conflict, use schema fields)
 
 ## Workflow
 
@@ -62,7 +73,7 @@ OpenAPI extraction mapping:
    - Request path (e.g., /voice/guide/close_pop)
    - Request parameters with types (e.g., userid: string, count: int)
    - Server domain (e.g., passport.inner.test.huajiao.com)
-   - Response fields (optional; only if needed by the user)
+   - Response fields or response JSON schema/example (required for model generation)
 3) Normalize the server domain:
    - Keep only the first label and the last two labels of the domain.
    - Remove everything between them, regardless of format (e.g., .inner, .inner-test, .test, etc.).
@@ -80,13 +91,16 @@ OpenAPI extraction mapping:
      - Example: summary "用户搜索" + path /user/search -> `/// 用户搜索` then `static let userSearch = Path(rawValue: "/user/search")`
      - The request class must use `Path.userSearch.rawValue`.
 5) Generate the Swift request class following the rules below.
-6) Generate the commented-out request method template following the rules below.
-7) Output destination:
-   - Always write the generated Swift class file to `huajiao_ios/living/Classes/Swift/Networking/Request` (assume it already exists).
+6) Generate the response model struct(s) following the rules below.
+7) Generate the commented-out request method template following the rules below.
+8) Output destination:
+   - Always write the generated Swift request class file to `huajiao_ios/living/Classes/Swift/Networking/Request` (assume it already exists).
+   - Always write the response model file to `huajiao_ios/living/Classes/Swift/Networking/Model`.
+   - Model file naming: `<PathPascal>Model.swift` (path in PascalCase + `Model` suffix).
    - If the user provides an explicit output path or filename, use it and override the default.
-8) Xcode project integration (when `--output-mode full`):
+9) Xcode project integration (when `--output-mode full`):
    - Prefer running `$CODEX_HOME/skills/swift-api-requester/scripts/swift_api_requester.py` to update `HostPath.swift` and `living.xcodeproj/project.pbxproj` in one pass.
-   - Add the generated folder and file(s) to `living.xcodeproj/project.pbxproj` under the `living` target.
+   - Add the generated folder and file(s) (request + model) to `living.xcodeproj/project.pbxproj` under the `living` target.
    - If the `Request` folder already exists in the project, only add the newly generated class file.
    - Even when the project is opened via `living.xcworkspace` (CocoaPods), changes to `living.xcodeproj` will appear in the workspace because the workspace references that project.
 
@@ -132,6 +146,33 @@ override var params: [AnyHashable : Any] {
     return pep_dictionaryWithValues(forExceptKeys: HJServiceRequestInfoBase.pep_allPropertyKeys as! [String])
 }
 ```
+
+### Response Model Struct(s)
+
+1) Default shape:
+   - Generate Swift `struct` types conforming to `Codable`.
+   - Base response model name: `<BasePathPascal>Model` (e.g., `/voice/guide/close_pop` -> `VoiceGuideClosePopModel`).
+   - Nested object types: `<ParentName><FieldPascal>` (e.g., `VoiceGuideClosePopModelData`).
+   - Arrays of objects: `<ParentName><FieldPascal>Item` (e.g., `VoiceGuideClosePopModelListItem`).
+2) Properties:
+   - Use `let <name>: <SwiftType>?` for fields (safe optional decoding).
+   - Keep JSON field names exactly as in the API doc. Do not sanitize or rename.
+   - If a field name is a Swift keyword, wrap it in backticks (e.g., ``let `set`: String?``) and add a line comment immediately above it: `// 此字段为关键字，请慎重使用或自行修改`.
+   - If a field name is not a valid Swift identifier (e.g., contains `-` or starts with a digit), stop and ask the user to confirm a mapping or provide a schema adjustment.
+3) Types mapping (response fields list mode):
+   - string -> `String`
+   - int/integer -> `Int`
+   - long -> `Int64`
+   - float/double/number -> `Double`
+   - bool/boolean -> `Bool`
+   - arrays must include element type: `items:[string]` or `items:array<int>`
+   - object/map/dict require a JSON schema/example instead of a flat list
+4) Top-level array or primitive response:
+   - Wrap with a `Codable` struct using a `singleValueContainer` (`items` for arrays, `value` for primitives).
+5) Parse start from `data`:
+   - If the response JSON has a `data` key, only parse the value of `data` into the model.
+   - If `data` key is missing or its value is null, do not generate a model.
+   - In that case, respond in chat with: “没有需要解析的数据” and show the raw response payload.
 
 ### Commented-Out Request Method
 
@@ -183,9 +224,11 @@ POST template:
 
 Return only:
 1) The Swift request class.
-2) The commented-out request method.
+2) The response model struct(s) (if `data` exists).
+3) The commented-out request method.
 
-If anything is missing or ambiguous in the API doc, ask the user before generating code.
+If anything is missing or ambiguous in the API doc (especially response schema), ask the user before generating code.
+If there is no `data` to parse, skip model generation and respond in chat with the no-data message + raw response; still return the request class and request method.
 
 If writing a file:
 - Use `<ClassName>.swift` as the filename unless the user specifies otherwise.
